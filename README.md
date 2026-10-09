@@ -101,6 +101,20 @@ PK log_id INT IDENTITY
 |---:|---:|---:|---:|---:|
 | 1,000,000 | 1,000,000 | 0 | 1,000,000 | 6건 (triglyceride 2, hdl 4) |
 
+### 실행 화면 (SSMS)
+
+**객체 탐색기** — 코드표 3개 + `fact_checkup` + `etl_log`, 그리고 인덱스 3개 (PK 클러스터드 1 + 비클러스터드 2)
+
+![객체 탐색기: 테이블 5개와 인덱스 3개](images/01_tables.png)
+
+**적재 검증** — `fact_checkup` 1,000,000행, `etl_log` 의 rows_read / rows_loaded / rows_dropped = 1,000,000 / 1,000,000 / 0
+
+![적재 검증: 행 수와 etl_log](images/02_load_check.jpg)
+
+**데이터 샘플** — 코드표(시도·성별·연령대)를 JOIN 한 10행
+
+![데이터 샘플: 코드표 JOIN 결과](images/03_sample_join.jpg)
+
 ## 분석 쿼리 (sql/03_analysis.sql)
 
 | 쿼리 | 내용 | 사용 기법 |
@@ -132,6 +146,10 @@ PK log_id INT IDENTITY
 
 실행 시간은 쿼리당 1회 측정값이며, 인덱스 2개 생성 이후 상태에서 실행했습니다.
 
+![Q2 시도별 혈압 높음 비율 (분모 = 전체 행)](images/08_q2_sido_bp.jpg)
+
+> 위 캡처는 단순화한 쿼리로 **분모를 `COUNT(*)`(sbp/dbp 가 NULL 인 행 포함)** 로 잡아 강원 17.64% 로 나옵니다. 위 표의 17.78% 는 `sql/03_analysis.sql` 의 Q2 로, 혈압 값이 있는 행만 분모로 한 값입니다. 순위 경향(강원 최고, 광주 최저)은 같습니다.
+
 ## 인덱스 튜닝 전/후 (docs/day2_results.md)
 
 측정 방법: `SET STATISTICS IO, TIME`, 캐시를 비우지 않은 **warm 3회 평균**과 `CHECKPOINT; DBCC DROPCLEANBUFFERS;` 후 **cold 1회**. 사용 인덱스는 실제 실행 계획으로 확인.
@@ -156,6 +174,20 @@ SELECT COUNT(*) FROM dbo.fact_checkup WHERE base_year = 2023;
 | C2 | 9,219 → 2,485 | -73.0% | 87.0 → 49.7 | -42.9% | 123 → 57 | Clustered Index Scan → Index Seek (ix_checkup_year_age_sex), 1,000,000행 전부 |
 
 인덱스 생성: ix_checkup_sido_bp 1,226 ms / 2,489 페이지(reserved), ix_checkup_year_age_sex 1,813 ms / 2,489 페이지 (테이블 클러스터드 인덱스는 9,225 페이지).
+
+**측정 요약 (실측값, `docs/day2_results.md`)**
+
+![인덱스 튜닝 전/후: 논리적 읽기와 실행 시간](images/04_tuning_summary.png)
+
+**실행 계획 (쿼리 A)** — 같은 쿼리에서 인덱스 힌트만 다릅니다. BEFORE 는 `WITH (INDEX(1))` 로 클러스터드 인덱스 스캔을 강제했습니다.
+
+![BEFORE: Clustered Index Scan, 읽은 행 1,000,000 / 실제 행 23,884](images/04_tuning_before_plan.jpg)
+
+![AFTER: Index Seek (ix_checkup_sido_bp), 읽은 행 175,300 / 실제 행 23,884](images/05_tuning_after_plan.jpg)
+
+**인덱스 크기** — PK 9,219 / ix_checkup_sido_bp 2,484 / ix_checkup_year_age_sex 2,485 페이지 (used)
+
+![인덱스 목록과 사용 페이지 수](images/07_index_list.jpg)
 
 **정리**
 
@@ -189,6 +221,8 @@ SELECT COUNT(*) FROM dbo.fact_checkup WHERE base_year = 2023;
 | 정리 | 백업 재검증 후 healthdb_restore 삭제, 원본 healthdb 1,000,000행 유지 확인 |
 
 운영 원칙: 원본 DB 위에 복원(덮어쓰기)하지 않고, 복구 테스트는 항상 별도 이름으로 수행했습니다.
+
+![백업 이력: 종류 D(전체), 체크섬 포함](images/06_backup_history.jpg)
 
 ## 한계점
 
