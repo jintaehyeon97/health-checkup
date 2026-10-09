@@ -1,0 +1,8 @@
+data/
+.env
+__pycache__/
+*.bak
+*.log
+docs/tmp/
+_to_delete/
+건강검진정보_2023_EDA.ipynb
