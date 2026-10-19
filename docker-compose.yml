@@ -1,0 +1,18 @@
+# 건강검진 SQL Server 환경 재현용 (Docker)
+# 사용법: env.example 을 .env 로 복사하고 비밀번호를 채운 뒤  docker compose up -d
+services:
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2025-latest   # 원본 DB가 SQL Server 2025 이므로 같은 버전 이상이어야 복원 가능
+    container_name: healthcheckup-mssql
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Express"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}          # .env 에서 읽음 (코드에 직접 쓰지 않음)
+    ports:
+      - "14330:1433"                                   # PC의 기존 SQL Server(1433)와 겹치지 않게 14330 사용
+    volumes:
+      - mssql_data:/var/opt/mssql                      # 컨테이너를 지워도 DB 유지
+      - ./backup:/var/opt/mssql/backup:ro              # .bak 은 이 폴더에 두기 (저장소에는 올리지 않음)
+
+volumes:
+  mssql_data:

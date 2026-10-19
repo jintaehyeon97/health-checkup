@@ -224,6 +224,52 @@ SELECT COUNT(*) FROM dbo.fact_checkup WHERE base_year = 2023;
 
 <img src="images/06_backup_history.jpg" alt="백업 이력: 종류 D(전체), 체크섬 포함" width="560">
 
+## Docker로 환경 재현
+
+> **한 줄 요약**
+> 백업해 둔 건강검진 데이터베이스를 다른 환경(Docker)에서 다시 열어 보고, **원본과 똑같은지** 확인했습니다.
+>
+> **쉽게 말하면**
+> - **백업과 복원:** 데이터를 통째로 복사해 두는 것이 백업이고, 그 복사본으로 되돌려 놓는 것이 복원입니다.
+> - **Docker:** 프로그램을 컴퓨터 환경과 상관없이 똑같이 실행하게 해 주는 상자입니다. 어느 컴퓨터에서든 같은 환경을 만들 수 있습니다.
+> - **확인 방법:** 데이터 건수(100만 건), 특정 조건으로 조회한 결과(23,884건), 전체 내용을 하나의 숫자로 요약한 값(체크섬)이 원본과 같은지 비교했습니다. 모두 같았습니다.
+> - **의미:** 컴퓨터가 고장 나도 백업으로 같은 데이터를 다시 만들 수 있고, 다른 사람도 같은 환경에서 결과를 다시 확인할 수 있습니다.
+
+백업 파일을 SQL Server 컨테이너의 별도 DB(`healthdb_restore`)로 복원하고, 원본과 같은 결과가 나오는지 확인합니다.
+(검증 결과: [docs/docker_restore_verification.md](docs/docker_restore_verification.md))
+
+| 항목 | 내용 |
+|---|---|
+| 이미지 | `mcr.microsoft.com/mssql/server:2025-latest` (원본이 SQL Server 2025이므로 같은 버전 이상 필요) |
+| 에디션 | Express |
+| 접속 | `localhost,14330` (SQL Server 인증, `sa`). 기존 PC의 SQL Server(1433)와 포트가 겹치지 않도록 14330 사용 |
+| 백업 파일 | `backup/healthdb_full.bak` (약 116.0 MiB, CHECKSUM 포함 전체 백업. 저장소에는 포함하지 않음) |
+
+### 실행 순서
+1. `env.example`을 `.env`로 복사하고 `MSSQL_SA_PASSWORD`를 입력합니다. (8자 이상, 대·소문자·숫자·기호 중 3종류 이상. `.env`는 커밋하지 않음)
+2. 프로젝트 폴더에 `backup/`을 만들고 `healthdb_full.bak`을 넣습니다.
+3. `docker compose up -d`
+4. SSMS에서 `localhost,14330`(SQL Server 인증, `sa`)으로 접속해 `docker/restore.sql`을 순서대로 실행합니다.
+   (`FILELISTONLY` → `VERIFYONLY` → `RESTORE ... WITH MOVE` → 검증 쿼리)
+5. 원본과 복원본의 행 수, 쿼리 A 결과, 체크섬이 같은지 비교합니다.
+
+### 주의
+- `.env`, `backup/`, `*.bak`은 `.gitignore`에 포함되어 있어야 합니다.
+- 복원은 `healthdb_restore`라는 별도 이름으로 하며 원본 DB는 건드리지 않습니다.
+- 컨테이너에서는 Windows 인증을 쓸 수 없어 SQL 계정(`sa`)을 사용했습니다. 개발·검증용 설정입니다.
+- 조회 시간 60.3 → 11.3ms 등 성능 수치는 Windows PC의 SQL Server Express에서 측정한 값이며, 컨테이너에서 다시 측정하지 않았습니다.
+
+### 용어 설명
+| 용어 | 쉬운 뜻 |
+|---|---|
+| 데이터베이스(DB) | 많은 데이터를 표 형태로 모아 두고 빠르게 찾는 저장 공간 |
+| 백업 / 복원 | 데이터를 통째로 복사해 두는 것 / 복사본으로 되돌려 놓는 것 |
+| Docker, 컨테이너 | 프로그램을 어느 컴퓨터에서나 똑같이 실행하게 해 주는 독립된 실행 공간 |
+| 인덱스 | 책의 색인처럼 원하는 데이터를 빨리 찾게 해 주는 목록 |
+| 체크섬 | 데이터 전체를 하나의 숫자로 요약한 값. 한 글자라도 다르면 값이 달라져서 "같은 데이터인지" 확인하는 데 씀 |
+| `healthdb_restore` | 원본을 건드리지 않으려고 새 이름으로 복원한 복사본 |
+| `sa` 계정 | SQL Server 관리자 계정. 이번에는 개발·검증용으로만 사용 |
+
 ## 한계점
 
 - **데이터는 2023년 한 해뿐**입니다. `base_year` 값이 하나라 연도 선두 인덱스(ix_checkup_year_age_sex)의 Seek 효과를 검증할 수 없었고, 연도별 추이 분석도 하지 않았습니다.
