@@ -5,6 +5,7 @@
 DB 운영 업무 흐름을 3일 동안 직접 수행한 프로젝트입니다.
 
 > README 의 모든 수치는 `docs/` 의 측정 기록(`day2_analysis.md`, `day2_results.md`, `day3_quality.md`, `day3_backup.md`)에서 가져온 실제 실행 결과입니다. 추정치는 쓰지 않았습니다.
+> 마지막 확장인 'AI 자연어 질의 프로토타입' 절의 수치만 `eval/results.csv`에서 가져왔습니다.
 
 ## 사용 기술
 
@@ -13,6 +14,7 @@ DB 운영 업무 흐름을 3일 동안 직접 수행한 프로젝트입니다.
 | DBMS | SQL Server 2025 Express (RTM 17.0.1000.7, 64-bit), SSMS |
 | 언어 | T-SQL, Python 3.13 |
 | 라이브러리 | pandas 2.3.0, pyodbc 5.3.0 |
+| AI (확장) | LangChain, SQLAlchemy, Claude API(`anthropic:claude-opus-5-5`) — [AI 자연어 질의 프로토타입](#ai-자연어-질의-프로토타입-app-eval) 참고 |
 | 연결 | ODBC Driver 18 for SQL Server, Windows 인증(`Trusted_Connection=yes`) — 비밀번호를 쓰지 않음 |
 | 환경 | Windows 11, 단일 PC |
 
@@ -36,6 +38,9 @@ medi_Project/
 │  └─ 06_backup.sql           전체 백업, 검증, 복구 연습
 ├─ etl/02_load.py             CSV → fact_checkup 적재
 ├─ tools/measure_tuning.py    04의 측정을 자동화 (STATISTICS IO/TIME + 실행 계획 → JSON)
+├─ docker-compose.yml, docker/ SQL Server 컨테이너 환경과 복구 스크립트
+├─ app/                       AI 자연어 질의 프로토타입 (Text-to-SQL)
+├─ eval/                      평가 질문·채점 코드·결과
 └─ docs/
    ├─ day2_analysis.md        분석 쿼리 실행 결과
    ├─ day2_results.md         튜닝 전/후 측정 기록
@@ -269,6 +274,106 @@ SELECT COUNT(*) FROM dbo.fact_checkup WHERE base_year = 2023;
 | 체크섬 | 데이터 전체를 하나의 숫자로 요약한 값. 한 글자라도 다르면 값이 달라져서 "같은 데이터인지" 확인하는 데 씀 |
 | `healthdb_restore` | 원본을 건드리지 않으려고 새 이름으로 복원한 복사본 |
 | `sa` 계정 | SQL Server 관리자 계정. 이번에는 개발·검증용으로만 사용 |
+
+## AI 자연어 질의 프로토타입 (app/, eval/)
+
+> 이 절의 수치는 `eval/results.csv`(2026-10-20 실행 1회)에서 가져온 실제 결과입니다.
+
+**쉬운 요약** — "서울에서 혈압 높은 사람은 몇 명이야?"처럼 한국어로 물으면, AI(LLM)가 SQL을 만들고,
+그 SQL을 위에서 구축한 DB에 실행한 뒤, 결과를 쉬운 말로 알려 주는 프로토타입입니다.
+SQL을 모르는 사람도 숫자를 확인할 수 있게 하는 것이 목적이고, **진단이나 의료 판단용이 아닌 참고용**입니다.
+
+### 동작 흐름
+
+```
+한국어 질문
+  → (1) 테이블 구조를 LLM에 전달 → (2) LLM이 SQL 생성
+  → (3) SELECT만 통과시키는 검사 → (4) SQL Server 실행 (읽기 전용 계정)
+  → (5) LLM이 결과를 2문장 이내로 설명 (+ "진단이 아닌 참고용입니다.")
+```
+
+| 파일 | 역할 |
+|---|---|
+| `app/check_db.py` | DB 연결만 확인 (조회 가능한 테이블, 행 수) |
+| `app/check_llm.py` | LLM 연결만 확인 |
+| `app/text2sql.py` | 질문 → SQL 생성 → 안전 검사 → 실행 → 설명 |
+| `eval/questions.csv` | 평가 질문 10개 + 직접 작성한 정답 SQL |
+| `eval/run_eval.py` | 정답 SQL과 LLM 생성 SQL의 **실행 결과**를 비교해 자동 채점 |
+| `eval/results.csv` | 채점 결과 (질문별 정답 결과, LLM 생성 SQL, 일치 여부) |
+
+### 안전장치
+
+- **읽기 전용 DB 계정(`ai_reader`)**: `fact_checkup` 테이블 한 개에 `SELECT` 권한만 부여했습니다. 실제 방어선은 이 DB 권한입니다.
+- **SELECT 전용 검사**: 생성된 SQL이 `SELECT`로 시작하지 않거나, `INSERT/UPDATE/DELETE/DROP/EXEC/INTO` 등의 키워드 또는 세미콜론이 있으면 실행하지 않습니다. (보조 수단이며, 완벽한 검증은 아닙니다.)
+- **예시 데이터 미전송**: 테이블 구조(컬럼 이름·타입)만 LLM에 보내고 실제 행은 보내지 않습니다. 다만 질문과 쿼리 결과(집계 값)는 LLM API로 전송됩니다.
+- **비밀값 분리**: DB 비밀번호와 API 키는 `.env`에만 두고 저장소에는 올리지 않습니다(`.gitignore`).
+
+### 실행 순서
+
+사전 조건: [Docker로 환경 재현](#docker로-환경-재현)의 컨테이너가 실행 중이어야 합니다.
+
+1. SSMS에서 `sa`로 접속해 읽기 전용 계정을 만듭니다. (비밀번호는 직접 정하고, 대문자·소문자·숫자 조합 사용)
+
+   ```sql
+   USE master;
+   CREATE LOGIN ai_reader WITH PASSWORD = '직접_정한_비밀번호';
+   USE healthdb_restore;
+   CREATE USER ai_reader FOR LOGIN ai_reader;
+   GRANT SELECT ON OBJECT::dbo.fact_checkup TO ai_reader;
+   ```
+
+2. `env.example`을 참고해 `.env`에 `DB_URI`, `LLM_MODEL`, LLM 서비스의 API 키를 추가합니다.
+3. 패키지 설치: `pip install -r requirements.txt` 와 사용하는 LLM 서비스용 패키지(예: `langchain-anthropic`)
+4. 단계별 확인 후 실행:
+
+   ```
+   python app\check_db.py        # DB 연결
+   python app\check_llm.py       # LLM 연결
+   python app\text2sql.py 전체 수검자는 몇 명이야?
+   python eval\run_eval.py       # 질문 10개 자동 채점
+   ```
+
+### 평가 결과
+
+- **방법**: 질문 10개에 대해 정답 SQL을 직접 작성하고, LLM이 만든 SQL과 **실행 결과**가 같으면 일치로 채점했습니다. (SQL 문장 모양은 비교하지 않음 — 예: 정답은 `COUNT(*)`, LLM은 `COUNT(DISTINCT member_id)`를 써도 결과가 같으면 일치)
+- **모델**: `anthropic:claude-opus-5-5`
+- **결과**: **10/10 일치** (1회 실행)
+
+| # | 질문 | 정답 값 | 일치 |
+|---|---|---|---|
+| 1 | 서울에서 수축기 140 이상 또는 이완기 90 이상인 사람 수 | 23,884 | O |
+| 2 | 전체 수검자 수 | 1,000,000 | O |
+| 3 | 서울 수검자의 평균 수축기 혈압 | 122.008226 | O |
+| 4 | 공복혈당 126 이상인 사람 수 | 77,805 | O |
+| 5 | 수축기 혈압 140 이상인 사람 수 | 112,657 | O |
+| 6 | 서울에서 공복혈당 126 이상인 사람 수 | 12,011 | O |
+| 7 | 총콜레스테롤 240 이상인 사람 수 | 51,448 | O |
+| 8 | 수축기 140 이상이면서 공복혈당 126 이상인 사람 수 | 16,658 | O |
+| 9 | BMI 25 이상인 사람 수 | 362,055 | O |
+| 10 | 수검자 수가 가장 많은 시도 코드와 인원 | 41, 267,122 | O |
+
+(1번의 정답 값 23,884는 앞의 Docker 복구 검증에서 확인한 값과 같습니다.)
+
+### 한계 (이 결과를 과대 해석하지 마세요)
+
+- **질문 10개, 기본 집계 위주**(건수·평균·단순 조건)입니다. 일반적인 정확도라고 말할 수 없습니다.
+- **1회 실행**이라 같은 질문에서 결과가 매번 같은지(일관성)는 측정하지 않았습니다.
+- 정답 SQL을 **같은 사람이 작성**했고, **모델 1종만** 사용해 모델 간 비교는 하지 못했습니다.
+- 성별·연령 코드값이 필요한 질문, 모호한 표현("건강한 사람"), 이상치 처리, **데이터에 없는 정보를 묻는 질문**, 악의적 요청(삭제 등)에 대한 평가는 아직 하지 않았습니다.
+- 질문의 "서울"은 `sido_code = 11`로 해석하도록 프롬프트에 적었으나, 공식 코드표와의 대조는 별도로 확인해야 합니다.
+- **설명 문장**은 쿼리 결과를 근거로 하지만 표현이 부정확할 수 있습니다. 초기 실행에서 근거 없는 추측 문장이 한 번 나와 프롬프트(2문장 이내, 추측 금지)를 수정했고, 이후 실행에서는 확인되지 않았지만 보장하지는 않습니다.
+- `langchain-community`가 유지보수 종료 예정이라는 경고가 출력됩니다. 향후 SQLAlchemy 직접 사용 등으로 교체할 계획입니다.
+
+### 다음 계획 (미수행)
+
+모델 간 비교(소형 모델), 코드값·모호한 표현·이상치 질문 추가, 안전성 테스트(삭제 요청 차단 여부), 반복 실행을 통한 일관성 측정.
+RAG(의료 문서 검색)는 이번 범위에 포함하지 않았습니다.
+
+### 용어 설명
+
+- **LLM**: 사람의 말을 이해하고 문장을 만들어 내는 AI 모델.
+- **Text-to-SQL**: 자연어 질문을 데이터베이스 질의문(SQL)으로 바꾸는 것.
+- **읽기 전용 계정**: 데이터를 조회만 할 수 있고 수정·삭제는 못 하는 DB 계정. AI가 실수해도 데이터가 바뀌지 않게 하는 안전장치.
 
 ## 한계점
 
