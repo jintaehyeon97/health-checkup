@@ -1,0 +1,6 @@
+langchain
+langchain-community
+sqlalchemy
+pyodbc
+python-dotenv
+# LLM 서비스에 맞게 하나 추가 설치: langchain-anthropic 또는 langchain-openai

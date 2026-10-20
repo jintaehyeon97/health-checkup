@@ -12,3 +12,6 @@ _to_delete/
 
 # Docker 복원용 백업 폴더 (저장소에 올리지 않음)
 backup/
+
+# 파이썬 가상환경
+.venv/
