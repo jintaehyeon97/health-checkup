@@ -1,0 +1,11 @@
+﻿id,질문,정답결과,LLM생성SQL,LLM결과,결과일치,오류
+1,서울에서 수축기 혈압 140 이상 또는 이완기 혈압 90 이상인 사람은 몇 명이야?,"[(23884,)]",SELECT COUNT(DISTINCT member_id) AS person_count FROM fact_checkup WHERE sido_code = 11   AND (sbp >= 140 OR dbp >= 90);,"[(23884,)]",O,
+2,전체 수검자는 몇 명이야?,"[(1000000,)]",SELECT COUNT(DISTINCT member_id) AS total_examinees FROM fact_checkup;,"[(1000000,)]",O,
+3,서울 수검자의 평균 수축기 혈압은?,"[(Decimal('122.008226'),)]","SELECT AVG(CAST(sbp AS DECIMAL(10, 2))) AS avg_sbp FROM fact_checkup WHERE sido_code = 11   AND sbp IS NOT NULL;","[(Decimal('122.008226'),)]",O,
+4,공복혈당이 126 이상인 사람은 몇 명이야?,"[(77805,)]",SELECT COUNT(DISTINCT member_id) AS person_count FROM fact_checkup WHERE fasting_glucose >= 126;,"[(77805,)]",O,
+5,수축기 혈압이 140 이상인 사람은 몇 명이야?,"[(112657,)]",SELECT COUNT(DISTINCT member_id) AS person_count FROM fact_checkup WHERE sbp >= 140;,"[(112657,)]",O,
+6,서울에서 공복혈당이 126 이상인 사람은 몇 명이야?,"[(12011,)]",SELECT COUNT(DISTINCT member_id) AS person_count FROM fact_checkup WHERE sido_code = 11   AND fasting_glucose >= 126;,"[(12011,)]",O,
+7,총콜레스테롤이 240 이상인 사람은 몇 명이야?,"[(51448,)]",SELECT COUNT(DISTINCT member_id) AS person_count FROM fact_checkup WHERE total_chol >= 240;,"[(51448,)]",O,
+8,수축기 혈압이 140 이상이면서 공복혈당이 126 이상인 사람은 몇 명이야?,"[(16658,)]",SELECT COUNT(DISTINCT member_id) AS person_count FROM fact_checkup WHERE sbp >= 140   AND fasting_glucose >= 126;,"[(16658,)]",O,
+9,BMI가 25 이상인 사람은 몇 명이야? (BMI = 몸무게(kg) / 키(m)의 제곱),"[(362055,)]","SELECT COUNT(DISTINCT member_id) AS bmi_25_over_member_count FROM fact_checkup WHERE height_cm > 0   AND weight_kg IS NOT NULL   AND CAST(weight_kg AS DECIMAL(10, 4)) / POWER(CAST(height_cm AS DECIMAL(10, 4)) / 100, 2) >= 25","[(362055,)]",O,
+10,수검자 수가 가장 많은 시도 코드는 무엇이고 몇 명이야?,"[(41, 267122)]","SELECT TOP 1 WITH TIES     sido_code,     COUNT(DISTINCT member_id) AS examinee_count FROM fact_checkup GROUP BY sido_code ORDER BY COUNT(DISTINCT member_id) DESC;","[(41, 267122)]",O,

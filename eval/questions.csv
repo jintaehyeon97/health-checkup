@@ -1,0 +1,11 @@
+﻿id,질문,정답SQL
+1,서울에서 수축기 혈압 140 이상 또는 이완기 혈압 90 이상인 사람은 몇 명이야?,SELECT COUNT(*) FROM dbo.fact_checkup WHERE sido_code = 11 AND (sbp >= 140 OR dbp >= 90)
+2,전체 수검자는 몇 명이야?,SELECT COUNT(*) FROM dbo.fact_checkup
+3,서울 수검자의 평균 수축기 혈압은?,"SELECT AVG(CAST(sbp AS DECIMAL(10,2))) FROM dbo.fact_checkup WHERE sido_code = 11"
+4,공복혈당이 126 이상인 사람은 몇 명이야?,SELECT COUNT(*) FROM dbo.fact_checkup WHERE fasting_glucose >= 126
+5,수축기 혈압이 140 이상인 사람은 몇 명이야?,SELECT COUNT(*) FROM dbo.fact_checkup WHERE sbp >= 140
+6,서울에서 공복혈당이 126 이상인 사람은 몇 명이야?,SELECT COUNT(*) FROM dbo.fact_checkup WHERE sido_code = 11 AND fasting_glucose >= 126
+7,총콜레스테롤이 240 이상인 사람은 몇 명이야?,SELECT COUNT(*) FROM dbo.fact_checkup WHERE total_chol >= 240
+8,수축기 혈압이 140 이상이면서 공복혈당이 126 이상인 사람은 몇 명이야?,SELECT COUNT(*) FROM dbo.fact_checkup WHERE sbp >= 140 AND fasting_glucose >= 126
+9,BMI가 25 이상인 사람은 몇 명이야? (BMI = 몸무게(kg) / 키(m)의 제곱),"SELECT COUNT(*) FROM dbo.fact_checkup WHERE weight_kg / POWER(height_cm / 100.0, 2) >= 25"
+10,수검자 수가 가장 많은 시도 코드는 무엇이고 몇 명이야?,"SELECT TOP 1 sido_code, COUNT(*) FROM dbo.fact_checkup GROUP BY sido_code ORDER BY COUNT(*) DESC"
